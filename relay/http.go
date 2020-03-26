@@ -37,6 +37,8 @@ type HTTP struct {
 	pingResponseCode    int
 	pingResponseHeaders map[string]string
 
+	SkipTLSVerification bool
+
 	closing int64
 	l       net.Listener
 
@@ -92,6 +94,7 @@ func NewHTTP(cfg config.HTTPConfig, verbose bool, fs config.Filters) (Relay, err
 
 	h.addr = cfg.Addr
 	h.name = cfg.Name
+	h.SkipTLSVerification = cfg.SkipTLSVerification
 	h.log = verbose
 	h.logger = log.New(os.Stdout, "relay: ", 0)
 

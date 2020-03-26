@@ -173,7 +173,6 @@ func newBufferList(maxSize, maxBatch int) *bufferList {
 	}
 }
 
-
 // Empty the buffer to drop any buffered query
 // This allows to flush 'impossible' queries which loop infinitely
 // without having to restart the whole relay

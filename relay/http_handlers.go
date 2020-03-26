@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"crypto/tls"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/strike-team/influxdb-relay/metric"
 )
 
 type status struct {
-	Status  map[string]stats `json:"status"`
+	Status map[string]stats `json:"status"`
 }
 
 func (h *HTTP) handleStatus(w http.ResponseWriter, r *http.Request, _ time.Time) {
@@ -70,8 +72,17 @@ func (h *HTTP) handleHealth(w http.ResponseWriter, _ *http.Request, _ time.Time)
 
 			var healthCheck = health{name: b.name, err: nil}
 
+			// Configure custom transport for http.Client
+			// Used for support skip-tls-verification option
+			transport := &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: h.SkipTLSVerification,
+				},
+			}
+
 			client := http.Client{
-				Timeout: h.healthTimeout,
+				Timeout:   h.healthTimeout,
+				Transport: metric.HTTPTransport(transport),
 			}
 			start := time.Now()
 			res, err := client.Get(b.location + b.endpoints.Ping)
@@ -130,7 +141,18 @@ func (h *HTTP) handleHealth(w http.ResponseWriter, _ *http.Request, _ time.Time)
 
 func (h *HTTP) handleAdmin(w http.ResponseWriter, r *http.Request, _ time.Time) {
 	// Client to perform the raw queries
-	client := http.Client{}
+
+	// Configure custom transport for http.Client
+	// Used for support skip-tls-verification option
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: h.SkipTLSVerification,
+		},
+	}
+
+	client := http.Client{
+		Transport: metric.HTTPTransport(transport),
+	}
 
 	// Base body for all requests
 	baseBody := bytes.Buffer{}
@@ -202,12 +224,12 @@ func (h *HTTP) handleAdmin(w http.ResponseWriter, r *http.Request, _ time.Time) 
 		close(responses)
 	}()
 
-		var errResponse *responseData
-		for resp := range responses {
-			switch resp.StatusCode / 100 {
-			case 2:
-				w.WriteHeader(http.StatusNoContent)
-				return
+	var errResponse *responseData
+	for resp := range responses {
+		switch resp.StatusCode / 100 {
+		case 2:
+			w.WriteHeader(http.StatusNoContent)
+			return
 
 		case 4:
 			// User error

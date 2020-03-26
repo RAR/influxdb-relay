@@ -70,6 +70,10 @@ type HTTPConfig struct {
 	Outputs []HTTPOutputConfig `toml:"output"`
 
 	HealthTimeout int64 `toml:"health-timeout-ms"`
+
+	// Skip TLS verification in order to use self signed certificate
+	// WARNING: It's insecure, use it only for developing and don't use in production
+	SkipTLSVerification bool `toml:"skip-tls-verification"`
 }
 
 // HTTPOutputConfig represents the specification of an HTTP backend target
