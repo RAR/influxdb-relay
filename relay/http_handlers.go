@@ -11,7 +11,6 @@ import (
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/strike-team/influxdb-relay/metric"
-	"github.com/strike-team/influxdb-relay/config"
 )
 
 type status struct {
@@ -323,11 +322,6 @@ func (h *HTTP) handleStandard(w http.ResponseWriter, r *http.Request, start time
 	for _, b := range h.backends {
 		b := b
 
-		if b.inputType != config.TypeInfluxdb {
-			wg.Done()
-			continue
-		}
-
 		// Don't do the request if the tags do not match the filters
 		err := b.validateRegexps(points)
 		if err != nil {
@@ -351,7 +345,7 @@ func (h *HTTP) handleStandard(w http.ResponseWriter, r *http.Request, start time
 
 				responses <- &responseData{}
 			} else {
-				if resp.StatusCode / 100 == 5 {
+				if resp.StatusCode/100 == 5 {
 					log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
 				}
 				responses <- resp
@@ -419,12 +413,7 @@ func (h *HTTP) handleProm(w http.ResponseWriter, r *http.Request, _ time.Time) {
 	authHeader := r.Header.Get("Authorization")
 
 	bodyBuf := getBuf()
-	_, err := bodyBuf.ReadFrom(r.Body)
-	if err != nil {
-		putBuf(bodyBuf)
-		jsonResponse(w, response{http.StatusInternalServerError, "problem reading request body"})
-		return
-	}
+	_, _ = bodyBuf.ReadFrom(r.Body)
 
 	outBytes := bodyBuf.Bytes()
 
@@ -435,10 +424,6 @@ func (h *HTTP) handleProm(w http.ResponseWriter, r *http.Request, _ time.Time) {
 
 	for _, b := range h.backends {
 		b := b
-		if b.inputType != config.TypePrometheus {
-			wg.Done()
-			continue
-		}
 
 		go func() {
 			defer wg.Done()
@@ -448,7 +433,7 @@ func (h *HTTP) handleProm(w http.ResponseWriter, r *http.Request, _ time.Time) {
 
 				responses <- &responseData{}
 			} else {
-				if resp.StatusCode / 100 == 5 {
+				if resp.StatusCode/100 == 5 {
 					log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
 				}
 
