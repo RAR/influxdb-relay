@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/signal"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/strike-team/influxdb-relay/config"
 	"github.com/strike-team/influxdb-relay/relayservice"
 )
@@ -21,9 +24,10 @@ var (
 		flag.PrintDefaults()
 	}
 
-	configFile  = flag.String("config", "", "Configuration file to use")
-	verbose     = flag.Bool("v", false, "If set, InfluxDB Relay will log HTTP requests")
-	versionFlag = flag.Bool("version", false, "Print current InfluxDB Relay version")
+	configFile     = flag.String("config", "", "Configuration file to use")
+	verbose        = flag.Bool("v", false, "If set, InfluxDB Relay will log HTTP requests")
+	versionFlag    = flag.Bool("version", false, "Print current InfluxDB Relay version")
+	runPprofServer = flag.Bool("pprof", false, "Run pprof server")
 )
 
 func runRelay(cfg config.Config) {
@@ -65,6 +69,13 @@ func main() {
 	if err != nil {
 		log.Println("Version: " + relayVersion)
 		log.Fatal(err.Error())
+	}
+
+	// Conditionally run server for pprof
+	if *runPprofServer {
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
 	}
 
 	cfg.Verbose = *verbose
