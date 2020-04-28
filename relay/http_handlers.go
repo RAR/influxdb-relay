@@ -2,19 +2,66 @@ package relay
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"log"
 	"net/http"
 	"sync"
 	"time"
-	"crypto/tls"
 
 	"github.com/influxdata/influxdb/models"
-	"github.com/strike-team/influxdb-relay/metric"
+)
+
+var (
+	// HTTP clients will share a common transport.
+	oneTransport    sync.Once
+	commonTransport *http.Transport
+
+	// The Healthcheck HTTP client has different requirements than other admin
+	// endpoints (namely HTTP timeout settings).
+	oneHealthcheckClient sync.Once
+	healthcheckClient    *http.Client
+
+	// HTTP Client to share across other admin endpoints (other than healthcheck).
+	oneAdminClient sync.Once
+	adminClient    *http.Client
 )
 
 type status struct {
 	Status map[string]stats `json:"status"`
+}
+
+func (h *HTTP) transport() *http.Transport {
+	oneTransport.Do(func() {
+		commonTransport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: h.SkipTLSVerification,
+			},
+		}
+	})
+
+	return commonTransport
+}
+
+func (h *HTTP) healthCheckClient() *http.Client {
+	oneHealthcheckClient.Do(func() {
+		healthcheckClient = &http.Client{
+			Timeout:   h.healthTimeout,
+			Transport: h.transport(),
+		}
+	})
+
+	return healthcheckClient
+}
+
+func (h *HTTP) adminClient() *http.Client {
+	oneAdminClient.Do(func() {
+		adminClient = &http.Client{
+			Transport: h.transport(),
+		}
+	})
+
+	return adminClient
 }
 
 func (h *HTTP) handleStatus(w http.ResponseWriter, r *http.Request, _ time.Time) {
@@ -67,23 +114,11 @@ func (h *HTTP) handleHealth(w http.ResponseWriter, _ *http.Request, _ time.Time)
 
 		validEndpoints++
 
-		go func() {
+		go func(client *http.Client) {
 			defer wg.Done()
 
 			var healthCheck = health{name: b.name, err: nil}
 
-			// Configure custom transport for http.Client
-			// Used for support skip-tls-verification option
-			transport := &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: h.SkipTLSVerification,
-				},
-			}
-
-			client := http.Client{
-				Timeout:   h.healthTimeout,
-				Transport: metric.HTTPTransport(transport),
-			}
 			start := time.Now()
 			res, err := client.Get(b.location + b.endpoints.Ping)
 
@@ -101,7 +136,7 @@ func (h *HTTP) handleHealth(w http.ResponseWriter, _ *http.Request, _ time.Time)
 			healthCheck.duration = time.Since(start)
 			responses <- healthCheck
 			return
-		}()
+		}(h.healthCheckClient())
 	}
 
 	go func() {
@@ -140,20 +175,6 @@ func (h *HTTP) handleHealth(w http.ResponseWriter, _ *http.Request, _ time.Time)
 }
 
 func (h *HTTP) handleAdmin(w http.ResponseWriter, r *http.Request, _ time.Time) {
-	// Client to perform the raw queries
-
-	// Configure custom transport for http.Client
-	// Used for support skip-tls-verification option
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: h.SkipTLSVerification,
-		},
-	}
-
-	client := http.Client{
-		Transport: metric.HTTPTransport(transport),
-	}
-
 	// Base body for all requests
 	baseBody := bytes.Buffer{}
 	_, err := baseBody.ReadFrom(r.Body)
@@ -199,7 +220,7 @@ func (h *HTTP) handleAdmin(w http.ResponseWriter, r *http.Request, _ time.Time) 
 			req.Header = r.Header
 
 			// Forward the request
-			resp, err := client.Do(req)
+			resp, err := h.adminClient().Do(req)
 			if err != nil {
 				// Internal error
 				log.Printf("problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
